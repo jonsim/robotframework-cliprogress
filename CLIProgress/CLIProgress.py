@@ -42,8 +42,26 @@ class Verbosity(enum.Enum):
 class CLIProgress:
     ROBOT_LISTENER_API_VERSION = 3
 
-    def __init__(self, verbosity="NORMAL"):
-        self.verbosity = Verbosity.from_string(verbosity.upper())
+    def __init__(self, verbosity="NORMAL", colors="AUTO"):
+        # Parse arguments.
+        verbosity = verbosity.upper()
+        colors = colors.upper()
+        self.verbosity = Verbosity.from_string(verbosity)
+        if colors in {"ON", "ANSI"}:
+            self.colors = True
+        elif colors in {"OFF"}:
+            self.colors = False
+        else: # Assume AUTO.
+            if sys.stdout.isatty():
+                if sys.platform == "win32":
+                    import importlib.util
+                    self.colors = importlib.util.find_spec("colorama") is not None
+                else:
+                    self.colors = True
+            else:
+                self.colors = False
+
+        # Set properties.
         self.terminal_width = shutil.get_terminal_size().columns
         self.status_lines = ['', '', '']
         self.run_start = None
@@ -57,7 +75,15 @@ class CLIProgress:
         self.current_test_trace = ''
         self.current_test_keyword_depth = 0
 
+        # On Windows, import colorama if we're coloring output.
+        if self.colors and sys.platform == "win32":
+            import colorama
+            colorama.just_fix_windows_console()
+
+        # Finally, prepare the console interface.
         self._draw_status_box()
+
+    # ------------------------------------------------------------------ helpers
 
     def _writeln(self, text=""):
         sys.stdout.write(text + "\n")
