@@ -160,26 +160,10 @@ class CLIProgress:
         name = getattr(result, "name", None) or getattr(suite, "name", None) or "<suite>"
         if self.suite_total_tests is None:
             self.suite_total_tests = int(getattr(suite, "test_count", 0))
-            # if self.verbosity >= Verbosity.NORMAL:
-            #     self._writeln(
-            #         "RUN START: %s test%s."
-            #         % (
-            #             self.suite_total_tests,
-            #             "" if self.suite_total_tests == 1 else "s",
-            #         )
-            #     )
 
         self._write_status_line(0, f"[SUITE] {name}")
 
-
-        # if self.verbosity >= Verbosity.NORMAL:
-        #     self._writeln("SUITE START: %s" % name)
-
     def end_suite(self, suite, result):
-        # name = getattr(result, "name", None) or getattr(suite, "name", None) or "<suite>"
-        # status = getattr(result, "status", None) or "UNKNOWN"
-        # if self.verbosity >= Verbosity.NORMAL:
-        #     self._writeln("SUITE END:   %s  => %s" % (name, status))
         self._write_status_line(0, "")
 
     # ------------------------------------------------------------------ test
@@ -191,13 +175,6 @@ class CLIProgress:
         self.current_test_keyword_depth = 0
         self.current_test_start_time = time.time()
 
-        name = getattr(result, "name", None) or getattr(test, "name", None) or "<test>"
-
-        # if self.suite_total_tests:
-        #     completion_percentage = "%2.0f%%" % (100 * (self.completed_tests / self.suite_total_tests))
-        # else:
-        #     completion_percentage = "??%%"
-
         elapsed_time = time.time() - self.run_start
         if self.completed_tests:
             avg_test_time = elapsed_time / self.completed_tests
@@ -208,63 +185,36 @@ class CLIProgress:
         self._write_status_line(1, "[TEST %2d/%2d] %s    (elapsed %s, ETA %s)" % (
             self.started_tests,
             self.suite_total_tests,
-            name,
+            test.name,
             self._format_time(elapsed_time),
             self._format_time(eta_time) if eta_time else "unknown",
         ))
 
-        # if self.verbosity >= Verbosity.NORMAL:
-        #     self._writeln(
-        #         "TEST START: [%s/%s] (%s) %s  (run elapsed %s)"
-        #         % (
-        #             self.started_tests,
-        #             total if total is not None else "?",
-        #             completion_percentage,
-        #             result.name,
-        #             self._format_time(time.time() - self.run_start),
-        #         )
-        #     )
-
     def end_test(self, test, result):
         start = self.current_test_start_time
         trace = self.current_test_trace
-        self.completed_tests += 1
         self.current_test_keyword_depth = 0
         self.current_test_start_time = None
         self.current_test_trace = ""
+        if result.not_run:
+            self._write_status_line(1, "")
+            return
+        self.completed_tests += 1
 
         end = time.time()
         elapsed = end - start
 
-        name = getattr(result, "name", None) or getattr(test, "name", None) or "<test>"
-        status = getattr(result, "status", None) or ("PASS" if getattr(result, "passed", False) else "UNKNOWN")
-
-        if status == "PASS":
+        if result.status == "PASS":
             self.passed_tests += 1
-        elif status == "SKIP":
-            self.skipped_tests += 1
-        elif status == "FAIL":
+        elif result.status == "FAIL":
             self.failed_tests += 1
+        elif result.status == "SKIP":
+            self.skipped_tests += 1
 
         self._write_status_line(1, "")
 
-        # if self.verbosity == Verbosity.NORMAL:
-        #     self._overwriteln()  # Clear any keyword prints before writing test end status.
-        # if self.verbosity >= Verbosity.NORMAL:
-        #     self._writeln(
-        #         "TEST END:   [%s/%s] %s  => %s (%s). ETA %s"
-        #         % (
-        #             self.completed_tests,
-        #             total if total is not None else "?",
-        #             result.name,
-        #             status,
-        #             self._format_time(elapsed),
-        #             eta,
-        #         )
-        #     )
-
-        if status == "FAIL":
-            fail_line = f"TEST FAILED: {name}"
+        if result.status == "FAIL":
+            fail_line = f"TEST FAILED: {test.name}"
             underline = "═" * len(fail_line)
             self._print_trace(f"{fail_line}\n{underline}\n{trace}")
 
@@ -283,35 +233,29 @@ class CLIProgress:
 
         self._write_status_line(2, f"[{kwstr}]  {argstr}")
 
-        # if self.verbosity >= Verbosity.DEBUG:
-        #     self._writeln(keyword_trace)
-        # elif self.verbosity >= Verbosity.NORMAL:
-        #     self._overwriteln("[%s]  %s" % (kwstr, argstr))
-
     def end_keyword(self, keyword, result):
         self.current_test_keyword_depth -= 1
+        if result.status == "NOT RUN":
+            self._write_status_line(2, "")
+            return
 
-        status = getattr(result, "status", None) or ("PASS" if getattr(result, "passed", False) else "UNKNOWN")
         elapsed_ms = getattr(result, "elapsedtime", None)
 
         elapsed = self._format_time(elapsed_ms / 1000.0) if elapsed_ms is not None else "?s"
 
         keyword_trace = self._indent() + "  "
-        if status == "PASS":
+        if result.status == "PASS":
             keyword_trace += f"✓ PASS    {elapsed}"
-        elif status == "SKIP" or status == "NOT RUN":
+        elif result.status == "SKIP":
             keyword_trace += f"→ SKIP    {elapsed}"
-        elif status == "FAIL":
+        elif result.status == "FAIL":
             keyword_trace += f"✗ FAIL    {elapsed}"
         else:
-            keyword_trace += f"? {status}    {elapsed}"
+            keyword_trace += f"? {result.status}    {elapsed}"
 
         self.current_test_trace += keyword_trace + "\n"
 
         self._write_status_line(2, "")
-
-        # if self.verbosity >= Verbosity.DEBUG:
-        #     self._writeln(keyword_trace)
 
     # ------------------------------------------------------------------ logging
 
