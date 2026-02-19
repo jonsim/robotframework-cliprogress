@@ -15,11 +15,12 @@ import shutil
 import sys
 import time
 
+
 @functools.total_ordering
 class Verbosity(enum.Enum):
-    QUIET  = 0
+    QUIET = 0
     NORMAL = 1
-    DEBUG  = 2
+    DEBUG = 2
 
     def __eq__(self, value):
         if isinstance(value, Verbosity):
@@ -49,12 +50,15 @@ class ANSI:
         @staticmethod
         def UP(n: int = 1) -> str:
             return f"\033[{n}A"
+
         @staticmethod
         def DOWN(n: int = 1) -> str:
             return f"\033[{n}B"
+
         @staticmethod
         def LEFT(n: int = 1) -> str:
             return f"\033[{n}D"
+
         @staticmethod
         def RIGHT(n: int = 1) -> str:
             return f"\033[{n}C"
@@ -111,10 +115,9 @@ class ANSI:
 class CLIProgress:
     ROBOT_LISTENER_API_VERSION = 3
 
-    def __init__(self,
-                 verbosity: str = "NORMAL",
-                 colors: str = "AUTO",
-                 width: int = 78):
+    def __init__(
+        self, verbosity: str = "NORMAL", colors: str = "AUTO", width: int = 78
+    ):
         # Parse arguments.
         verbosity = verbosity.upper()
         colors = colors.upper()
@@ -123,10 +126,11 @@ class CLIProgress:
             self.colors = True
         elif colors in {"OFF"}:
             self.colors = False
-        else: # Assume AUTO.
+        else:  # Assume AUTO.
             if sys.stdout.isatty():
                 if sys.platform == "win32":
                     import importlib.util
+
                     self.colors = importlib.util.find_spec("colorama") is not None
                 else:
                     self.colors = True
@@ -134,8 +138,10 @@ class CLIProgress:
                 self.colors = False
 
         # Set properties.
-        self.terminal_width = min(shutil.get_terminal_size(fallback=(width, 40)).columns, width)
-        self.status_lines = ['', '', '']
+        self.terminal_width = min(
+            shutil.get_terminal_size(fallback=(width, 40)).columns, width
+        )
+        self.status_lines = ["", "", ""]
         self.run_start = None
         self.suite_total_tests = None
         self.started_tests = 0
@@ -144,13 +150,14 @@ class CLIProgress:
         self.failed_tests = 0
         self.completed_tests = 0
         self.current_test_start_time = None
-        self.current_test_trace = ''
+        self.current_test_trace = ""
         self.keyword_depth = 0
         self.keyword_stack = []
 
         # On Windows, import colorama if we're coloring output.
         if self.colors and sys.platform == "win32":
             import colorama
+
             colorama.just_fix_windows_console()
 
         # Finally, prepare the console interface.
@@ -169,10 +176,10 @@ class CLIProgress:
 
     def _draw_status_box(self):
         text_width = self.terminal_width - 4
-        sys.stdout.write('┌' + '─' * (self.terminal_width - 2) + '┐\n')
+        sys.stdout.write("┌" + "─" * (self.terminal_width - 2) + "┐\n")
         for i in range(3):
-            sys.stdout.write(f'│ {self.status_lines[i]:<{text_width}.{text_width}} │\n')
-        sys.stdout.write('└' + '─' * (self.terminal_width - 2) + '┘')
+            sys.stdout.write(f"│ {self.status_lines[i]:<{text_width}.{text_width}} │\n")
+        sys.stdout.write("└" + "─" * (self.terminal_width - 2) + "┘")
         sys.stdout.flush()
 
     def _clear_status_box(self):
@@ -194,7 +201,8 @@ class CLIProgress:
         self.status_lines[line_no] = text
         line_offset = 3 - line_no
         sys.stdout.write(ANSI.Cursor.UP(line_offset))
-        sys.stdout.write(ANSI.Cursor.HOME + f"│ {text:<{self.terminal_width - 4}.{self.terminal_width - 4}} │")
+        tw = self.terminal_width - 4
+        sys.stdout.write(ANSI.Cursor.HOME + f"│ {text:<{tw}.{tw}} │")
         # Move cursor back down to the bottom of the box.
         sys.stdout.write(ANSI.Cursor.DOWN(line_offset))
 
@@ -216,11 +224,11 @@ class CLIProgress:
         m, s = divmod(seconds, 60)
         h, m = divmod(m, 60)
         if h:
-            return "%2dh %2dm %2ds" % (h, m, s)
+            return f"{h:2d}h {m:2d}m {s:2d}s"
         elif m:
-            return "%2dm %2ds" % (m, s)
+            return f"{m:2d}m {s:2d}s"
         else:
-            return "%2ds" % (s)
+            return f"{s:2d}s"
 
     def _indent(self):
         return "  " * min(self.keyword_depth, 20)
@@ -236,7 +244,9 @@ class CLIProgress:
     def start_suite(self, suite, result):
         self._record_run_start()
 
-        name = getattr(result, "name", None) or getattr(suite, "name", None) or "<suite>"
+        name = (
+            getattr(result, "name", None) or getattr(suite, "name", None) or "<suite>"
+        )
         if self.suite_total_tests is None:
             self.suite_total_tests = int(getattr(suite, "test_count", 0))
 
@@ -250,7 +260,7 @@ class CLIProgress:
     def start_test(self, test, result):
         self._record_run_start()
         self.started_tests += 1
-        self.current_test_trace = ''
+        self.current_test_trace = ""
         self.keyword_depth = 0
         self.keyword_stack = []
         self.current_test_start_time = time.time()
@@ -262,16 +272,15 @@ class CLIProgress:
             eta_time = avg_test_time * remaining_tests
         else:
             eta_time = None
-        self._write_status_line(1, "[TEST %2d/%2d] %s    (elapsed %s, ETA %s)" % (
-            self.started_tests,
-            self.suite_total_tests,
-            test.name,
-            self._format_time(elapsed_time),
-            self._format_time(eta_time) if eta_time else "unknown",
-        ))
+        eta_str = self._format_time(eta_time) if eta_time else "unknown"
+        self._write_status_line(
+            1,
+            f"[TEST {self.started_tests:2d}/{self.suite_total_tests:2d}] {test.name}"
+            f"    (elapsed {self._format_time(elapsed_time)}, ETA {eta_str})",
+        )
 
     def end_test(self, test, result):
-        start = self.current_test_start_time
+        # start = self.current_test_start_time
         trace = self.current_test_trace
         self.keyword_depth = 0
         self.keyword_stack = []
@@ -282,8 +291,8 @@ class CLIProgress:
             return
         self.completed_tests += 1
 
-        end = time.time()
-        elapsed = end - start
+        # end = time.time()
+        # elapsed = end - start  # retained for potential future use
 
         if result.status == "PASS":
             self.passed_tests += 1
@@ -304,7 +313,11 @@ class CLIProgress:
     # ------------------------------------------------------------------ keyword
 
     def start_keyword(self, keyword, result):
-        name = getattr(result, "kwname", None) or getattr(result, "name", None) or "<unknown>"
+        name = (
+            getattr(result, "kwname", None)
+            or getattr(result, "name", None)
+            or "<unknown>"
+        )
         lib = getattr(result, "libname", None)
         args = getattr(result, "args", None) or []
         argstr = ", ".join(repr(a) for a in args)
@@ -330,7 +343,9 @@ class CLIProgress:
 
         elapsed_ms = getattr(result, "elapsedtime", None)
 
-        elapsed = self._format_time(elapsed_ms / 1000.0) if elapsed_ms is not None else "?s"
+        elapsed = (
+            self._format_time(elapsed_ms / 1000.0) if elapsed_ms is not None else "?s"
+        )
 
         keyword_trace = self._indent() + "  "
         if result.status == "PASS":
@@ -376,13 +391,25 @@ class CLIProgress:
 
         if self.colors:
             if level == "FAIL":
-                formatted_lines = [f"{ANSI.Fore.BRIGHT_RED}{line}{ANSI.Fore.RESET}" for line in formatted_lines]
+                formatted_lines = [
+                    f"{ANSI.Fore.BRIGHT_RED}{line}{ANSI.Fore.RESET}"
+                    for line in formatted_lines
+                ]
             elif level == "WARN":
-                formatted_lines = [f"{ANSI.Fore.BRIGHT_YELLOW}{line}{ANSI.Fore.RESET}" for line in formatted_lines]
+                formatted_lines = [
+                    f"{ANSI.Fore.BRIGHT_YELLOW}{line}{ANSI.Fore.RESET}"
+                    for line in formatted_lines
+                ]
             elif level == "INFO":
-                formatted_lines = [f"{ANSI.Fore.BRIGHT_BLACK}{line}{ANSI.Fore.RESET}" for line in formatted_lines]
+                formatted_lines = [
+                    f"{ANSI.Fore.BRIGHT_BLACK}{line}{ANSI.Fore.RESET}"
+                    for line in formatted_lines
+                ]
             elif level == "DEBUG" or level == "TRACE":
-                formatted_lines = [f"{ANSI.Fore.WHITE}{line}{ANSI.Fore.RESET}" for line in formatted_lines]
+                formatted_lines = [
+                    f"{ANSI.Fore.WHITE}{line}{ANSI.Fore.RESET}"
+                    for line in formatted_lines
+                ]
 
         self.current_test_trace += "\n".join(formatted_lines) + "\n"
 
@@ -391,22 +418,20 @@ class CLIProgress:
     def close(self):
         total = (
             self.suite_total_tests
-            if isinstance(self.suite_total_tests, int)
-            and self.suite_total_tests > 0
+            if isinstance(self.suite_total_tests, int) and self.suite_total_tests > 0
             else self.started_tests
         )
 
         self._clear_status_box()
 
         if self.verbosity >= Verbosity.NORMAL:
+            plural = "" if total == 1 else "s"
             self._writeln(
-                "RUN COMPLETE: %d test%s, %d completed (%d passed, %d skipped, %d failed)."
-                % (total, "" if total == 1 else "s", self.completed_tests,
-                   self.passed_tests, self.skipped_tests, self.failed_tests)
+                f"RUN COMPLETE: {total} test{plural}, {self.completed_tests} completed"
+                f" ({self.passed_tests} passed, {self.skipped_tests} skipped,"
+                f" {self.failed_tests} failed)."
             )
 
         if self.run_start is not None and self.verbosity >= Verbosity.NORMAL:
-            self._writeln(
-                "Total elapsed: %s."
-                % self._format_time(time.time() - self.run_start)
-            )
+            elapsed_str = self._format_time(time.time() - self.run_start)
+            self._writeln(f"Total elapsed: {elapsed_str}.")

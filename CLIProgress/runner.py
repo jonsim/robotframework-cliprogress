@@ -3,8 +3,9 @@
 # A thin wrapper around robot that adds the CLIProgress listener and
 # automatically sets its arguments.
 #
-import sys
 import subprocess
+import sys
+
 
 def main():
     args = sys.argv[1:]

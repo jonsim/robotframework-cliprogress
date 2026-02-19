@@ -6,10 +6,10 @@ authors = [{ name = "Jonathan Simmonds", email = "jon@jonsim.com" }]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["robotframework"]
+dev = ["robotframework", "ruff"]
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
@@ -17,3 +17,13 @@ where = ["."]
 
 [project.scripts]
 robot-cli = "CLIProgress.runner:main"
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

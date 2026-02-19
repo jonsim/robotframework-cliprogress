@@ -1,1 +1,1 @@
-from .CLIProgress import CLIProgress
+from .CLIProgress import CLIProgress as CLIProgress
