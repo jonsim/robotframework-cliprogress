@@ -134,7 +134,7 @@ class CLIProgress:
                 self.colors = False
 
         # Set properties.
-        self.terminal_width = shutil.get_terminal_size().columns
+        self.terminal_width = min(shutil.get_terminal_size(fallback=(width, 40)).columns, width)
         self.status_lines = ['', '', '']
         self.run_start = None
         self.suite_total_tests = None
