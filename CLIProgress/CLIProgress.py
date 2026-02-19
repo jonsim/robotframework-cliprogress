@@ -189,7 +189,8 @@ class CLIProgress:
         self.failed_tests = 0
         self.completed_tests = 0
         self.current_test_start_time = None
-        self.trace_stack = TraceStack()
+        self.test_trace_stack = TraceStack()
+        self.suite_trace_stack = TraceStack()
 
         # On Windows, import colorama if we're coloring output.
         if self.colors and sys.platform == "win32":
@@ -201,6 +202,10 @@ class CLIProgress:
         self._draw_status_box()
 
     # ------------------------------------------------------------------ helpers
+
+    @property
+    def in_test(self) -> bool:
+        return self.current_test_start_time is not None
 
     def _writeln(self, text=""):
         sys.stdout.write(text + "\n")
@@ -271,6 +276,7 @@ class CLIProgress:
 
     def start_suite(self, suite, result):
         self._record_run_start()
+        self.suite_trace_stack.clear()
 
         name = (
             getattr(result, "name", None) or getattr(suite, "name", None) or "<suite>"
@@ -281,14 +287,26 @@ class CLIProgress:
         self._write_status_line(0, f"[SUITE] {name}")
 
     def end_suite(self, suite, result):
+        trace = self.suite_trace_stack.trace
+        self.suite_trace_stack.clear()
+
         self._write_status_line(0, "")
+
+        if result.status == "FAIL" and trace:
+            fail_line = f"SUITE FAILED: {suite.name}"
+            underline = "═" * len(fail_line)
+            if self.colors:
+                fail_line = (
+                    f"{ANSI.Fore.RED}SUITE FAILED{ANSI.Fore.RESET}: {suite.name}"
+                )
+            self._print_trace(f"{fail_line}\n{underline}\n{trace}")
 
     # ------------------------------------------------------------------ test
 
     def start_test(self, test, result):
         self._record_run_start()
         self.started_tests += 1
-        self.trace_stack.clear()
+        self.test_trace_stack.clear()
         self.current_test_start_time = time.time()
 
         elapsed_time = time.time() - self.run_start
@@ -307,8 +325,8 @@ class CLIProgress:
 
     def end_test(self, test, result):
         # start = self.current_test_start_time
-        trace = self.trace_stack.trace
-        self.trace_stack.clear()
+        trace = self.test_trace_stack.trace
+        self.test_trace_stack.clear()
         self.current_test_start_time = None
         if result.not_run:
             self._write_status_line(1, "")
@@ -337,6 +355,7 @@ class CLIProgress:
     # ------------------------------------------------------------------ keyword
 
     def start_keyword(self, keyword, result):
+        stack = self.test_trace_stack if self.in_test else self.suite_trace_stack
         name = (
             getattr(result, "kwname", None)
             or getattr(result, "name", None)
@@ -347,20 +366,21 @@ class CLIProgress:
         argstr = ", ".join(repr(a) for a in args)
         kwstr = f"{lib}.{name}" if lib else name
         trace_line = f"▶ {kwstr}({argstr})"
-        self.trace_stack.push_keyword(trace_line)
+        stack.push_keyword(trace_line)
 
         self._write_status_line(2, f"[{kwstr}]  {argstr}")
 
     def end_keyword(self, keyword, result):
+        stack = self.test_trace_stack if self.in_test else self.suite_trace_stack
         if result.status == "NOT RUN":
             # Discard; the header was never flushed so it just disappears.
-            self.trace_stack.pop_keyword()
+            stack.pop_keyword()
             self._write_status_line(2, "")
             return
 
         # Keyword ran - flush any pending ancestor headers (and this one)
         # so the hierarchy appears in the trace.
-        self.trace_stack.flush()
+        stack.flush()
 
         elapsed_ms = getattr(result, "elapsedtime", None)
 
@@ -387,7 +407,7 @@ class CLIProgress:
         else:
             keyword_trace += f"? {result.status}    {elapsed}"
 
-        self.trace_stack.append_trace(keyword_trace)
+        stack.append_trace(keyword_trace)
 
         self._write_status_line(2, "")
 
@@ -398,7 +418,8 @@ class CLIProgress:
         text = getattr(message, "message", None) or ""
 
         # Flush keyword headers so they appear above the log line.
-        self.trace_stack.flush(decrement_depth=False)
+        stack = self.test_trace_stack if self.in_test else self.suite_trace_stack
+        stack.flush(decrement_depth=False)
 
         level_initial = level[0].upper()
         text_lines = text.splitlines()
@@ -431,7 +452,7 @@ class CLIProgress:
                     for line in formatted_lines
                 ]
 
-        self.trace_stack.append_trace("\n".join(formatted_lines))
+        stack.append_trace("\n".join(formatted_lines))
 
     # ------------------------------------------------------------------ close
 
