@@ -156,12 +156,17 @@ class CLIProgress:
     ROBOT_LISTENER_API_VERSION = 3
 
     def __init__(
-        self, verbosity: str = "NORMAL", colors: str = "AUTO", width: int = 120
+        self,
+        verbosity: str = "NORMAL",
+        colors: str = "AUTO",
+        console_status: str = "STDOUT",
+        width: int = 120,
     ):
-        # Parse arguments.
+        # Parse verbosity argument.
         verbosity = verbosity.upper()
-        colors = colors.upper()
         self.verbosity = Verbosity.from_string(verbosity)
+        # Parse colors argument.
+        colors = colors.upper()
         if colors in {"ON", "ANSI"}:
             self.colors = True
         elif colors in {"OFF"}:
@@ -176,6 +181,14 @@ class CLIProgress:
                     self.colors = True
             else:
                 self.colors = False
+        # Parse console_status argument.
+        console_status = console_status.upper()
+        if console_status == "STDOUT":
+            self.status_stream = sys.stdout
+        elif console_status == "STDERR":
+            self.status_stream = sys.stderr
+        else:
+            self.status_stream = None
 
         # Set properties.
         self.terminal_width = min(
@@ -213,36 +226,44 @@ class CLIProgress:
         sys.stdout.flush()
 
     def _draw_status_box(self):
+        if not self.status_stream:
+            return
         text_width = self.terminal_width - 4
-        sys.stdout.write("┌" + "─" * (self.terminal_width - 2) + "┐\n")
+        self.status_stream.write("┌" + "─" * (self.terminal_width - 2) + "┐\n")
         for i in range(3):
-            sys.stdout.write(f"│ {self.status_lines[i]:<{text_width}.{text_width}} │\n")
-        sys.stdout.write("└" + "─" * (self.terminal_width - 2) + "┘")
-        sys.stdout.flush()
+            self.status_stream.write(
+                f"│ {self.status_lines[i]:<{text_width}.{text_width}} │\n"
+            )
+        self.status_stream.write("└" + "─" * (self.terminal_width - 2) + "┘")
+        self.status_stream.flush()
 
     def _clear_status_box(self):
+        if not self.status_stream:
+            return
         # Clear the current line and move the cursor up. Do this 5 times to
         # clear the entire box (3 lines of text + top and bottom borders).
         for _ in range(4):
-            sys.stdout.write(ANSI.Cursor.CLEAR_LINE + ANSI.Cursor.UP())
+            self.status_stream.write(ANSI.Cursor.CLEAR_LINE + ANSI.Cursor.UP())
         # Clear the final line and reset the cursor to the start of the line.
-        sys.stdout.write(ANSI.Cursor.CLEAR_LINE + ANSI.Cursor.HOME)
+        self.status_stream.write(ANSI.Cursor.CLEAR_LINE + ANSI.Cursor.HOME)
+        self.status_stream.flush()
 
     def _write_status_line(self, line_no: int, text: str):
+        if not self.status_stream:
+            return
         # Move cursor to the line inside the box and write the text.
         # For line 0, we want to move up 3 lines (to the first empty line in the box).
         # For line 1, we want to move up 2 lines.
         # For line 2, we want to move up 1 line.
-        # self._writeln(text)
-        # return
         assert line_no >= 0 and line_no < 3, "line_no must be between 0 and 2"
         self.status_lines[line_no] = text
         line_offset = 3 - line_no
-        sys.stdout.write(ANSI.Cursor.UP(line_offset))
+        self.status_stream.write(ANSI.Cursor.UP(line_offset))
         tw = self.terminal_width - 4
-        sys.stdout.write(ANSI.Cursor.HOME + f"│ {text:<{tw}.{tw}} │")
+        self.status_stream.write(ANSI.Cursor.HOME + f"│ {text:<{tw}.{tw}} │")
         # Move cursor back down to the bottom of the box.
-        sys.stdout.write(ANSI.Cursor.DOWN(line_offset))
+        self.status_stream.write(ANSI.Cursor.DOWN(line_offset))
+        self.status_stream.flush()
 
     def _print_trace(self, text: str):
         # First clear the status box, so we don't have to worry about
