@@ -152,6 +152,55 @@ class TraceStack:
         self._stack.clear()
 
 
+class TestStatistics:
+    def __init__(self):
+        self.top_level_suite_count: int | None = None
+        self.top_level_test_count: int | None = None
+        self.started_suites = 0
+        self.started_tests = 0
+        self.passed_tests = 0
+        self.skipped_tests = 0
+        self.failed_tests = 0
+        self.completed_tests = 0
+
+    def start_suite(self, suite):
+        self.started_suites += 1
+        if self.top_level_suite_count is None:
+            self.top_level_suite_count = len(suite.suites) or 1
+        if self.top_level_test_count is None:
+            self.top_level_test_count = suite.test_count
+
+    def start_test(self):
+        self.started_tests += 1
+
+    def end_test(self, result):
+        if result.not_run:
+            return
+        self.completed_tests += 1
+        if result.status == "PASS":
+            self.passed_tests += 1
+        elif result.status == "FAIL":
+            self.failed_tests += 1
+        elif result.status == "SKIP":
+            self.skipped_tests += 1
+
+    def format_suite_progress(self) -> str:
+        return f"{self.started_suites:2d}/{self.top_level_suite_count:2d}"
+
+    def format_test_progress(self) -> str:
+        return f"{self.started_tests:2d}/{self.top_level_test_count:2d}"
+
+    def format_run_results(self) -> str:
+        plural = "s" if self.top_level_test_count != 1 else ""
+        return (
+            f"{self.top_level_test_count or 0} test{plural}, "
+            f"{self.completed_tests} completed "
+            f"({self.passed_tests} passed, "
+            f"{self.skipped_tests} skipped, "
+            f"{self.failed_tests} failed)."
+        )
+
+
 class CLIProgress:
     ROBOT_LISTENER_API_VERSION = 3
 
@@ -187,7 +236,7 @@ class CLIProgress:
             self.status_stream = sys.stdout
         elif console_status == "STDERR":
             self.status_stream = sys.stderr
-        else:
+        else:  # Assume NONE.
             self.status_stream = None
 
         # Set properties.
@@ -195,14 +244,9 @@ class CLIProgress:
             shutil.get_terminal_size(fallback=(width, 40)).columns, width
         )
         self.status_lines = ["", "", ""]
-        self.run_start = None
-        self.suite_total_tests = None
-        self.started_tests = 0
-        self.passed_tests = 0
-        self.skipped_tests = 0
-        self.failed_tests = 0
-        self.completed_tests = 0
-        self.current_test_start_time = None
+        self.run_start_time: float | None = None
+        self.current_test_start_time: float | None = None
+        self.stats = TestStatistics()
         self.test_trace_stack = TraceStack()
         self.suite_trace_stack = TraceStack()
 
@@ -275,8 +319,8 @@ class CLIProgress:
         self._draw_status_box()
 
     def _record_run_start(self):
-        if self.run_start is None:
-            self.run_start = time.time()
+        if self.run_start_time is None:
+            self.run_start_time = time.time()
 
     def _format_time(self, seconds):
         seconds = int(round(seconds))
@@ -293,12 +337,12 @@ class CLIProgress:
 
     def start_suite(self, suite, result):
         self._record_run_start()
+        self.stats.start_suite(suite)
         self.suite_trace_stack.clear()
 
-        if self.suite_total_tests is None:
-            self.suite_total_tests = int(getattr(suite, "test_count", 0))
-
-        self._write_status_line(0, f"[SUITE] {suite.full_name}")
+        self._write_status_line(
+            0, f"[SUITE {self.stats.format_suite_progress()}] {suite.full_name}"
+        )
 
     def end_suite(self, suite, result):
         trace = self.suite_trace_stack.trace
@@ -319,21 +363,23 @@ class CLIProgress:
 
     def start_test(self, test, result):
         self._record_run_start()
-        self.started_tests += 1
+        self.stats.start_test()
         self.test_trace_stack.clear()
         self.current_test_start_time = time.time()
 
-        elapsed_time = time.time() - self.run_start
-        if self.completed_tests:
-            avg_test_time = elapsed_time / self.completed_tests
-            remaining_tests = self.suite_total_tests - self.completed_tests
+        elapsed_time = time.time() - self.run_start_time
+        if self.stats.completed_tests:
+            avg_test_time = elapsed_time / self.stats.completed_tests
+            remaining_tests = (
+                self.stats.top_level_test_count - self.stats.completed_tests
+            )
             eta_time = avg_test_time * remaining_tests
         else:
             eta_time = None
         eta_str = self._format_time(eta_time) if eta_time else "unknown"
         self._write_status_line(
             1,
-            f"[TEST {self.started_tests:2d}/{self.suite_total_tests:2d}] {test.name}"
+            f"[TEST {self.stats.format_test_progress()}] {test.name}"
             f"    (elapsed {self._format_time(elapsed_time)}, ETA {eta_str})",
         )
 
@@ -345,17 +391,11 @@ class CLIProgress:
         if result.not_run:
             self._write_status_line(1, "")
             return
-        self.completed_tests += 1
+
+        self.stats.end_test(result)
 
         # end = time.time()
         # elapsed = end - start  # retained for potential future use
-
-        if result.status == "PASS":
-            self.passed_tests += 1
-        elif result.status == "FAIL":
-            self.failed_tests += 1
-        elif result.status == "SKIP":
-            self.skipped_tests += 1
 
         self._write_status_line(1, "")
 
@@ -475,22 +515,11 @@ class CLIProgress:
     # ------------------------------------------------------------------ close
 
     def close(self):
-        total = (
-            self.suite_total_tests
-            if isinstance(self.suite_total_tests, int) and self.suite_total_tests > 0
-            else self.started_tests
-        )
-
         self._clear_status_box()
 
         if self.verbosity >= Verbosity.NORMAL:
-            plural = "" if total == 1 else "s"
-            self._writeln(
-                f"RUN COMPLETE: {total} test{plural}, {self.completed_tests} completed"
-                f" ({self.passed_tests} passed, {self.skipped_tests} skipped,"
-                f" {self.failed_tests} failed)."
-            )
+            self._writeln("RUN COMPLETE: " + self.stats.format_run_results())
 
-        if self.run_start is not None and self.verbosity >= Verbosity.NORMAL:
-            elapsed_str = self._format_time(time.time() - self.run_start)
+        if self.run_start_time is not None and self.verbosity >= Verbosity.NORMAL:
+            elapsed_str = self._format_time(time.time() - self.run_start_time)
             self._writeln(f"Total elapsed: {elapsed_str}.")
