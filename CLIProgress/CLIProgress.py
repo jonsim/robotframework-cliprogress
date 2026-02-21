@@ -291,7 +291,7 @@ class CLIProgress:
         self,
         verbosity: str = "NORMAL",
         colors: str = "AUTO",
-        console_status: str = "STDOUT",
+        console_progress: str = "STDOUT",
         width: int = 120,
     ):
         # Parse verbosity argument.
@@ -313,14 +313,14 @@ class CLIProgress:
                     self.colors = True
             else:
                 self.colors = False
-        # Parse console_status argument.
-        console_status = console_status.upper()
-        if console_status == "STDOUT":
-            self.status_stream = sys.stdout
-        elif console_status == "STDERR":
-            self.status_stream = sys.stderr
+        # Parse console_progress argument.
+        console_progress = console_progress.upper()
+        if console_progress == "STDOUT":
+            self.progress_stream = sys.stdout
+        elif console_progress == "STDERR":
+            self.progress_stream = sys.stderr
         else:  # Assume NONE.
-            self.status_stream = None
+            self.progress_stream = None
 
         # Configure output based on verbosity.
         self.print_passed = self.verbosity >= Verbosity.DEBUG
@@ -333,7 +333,7 @@ class CLIProgress:
         self.terminal_width = min(
             shutil.get_terminal_size(fallback=(width, 40)).columns, width
         )
-        self.status_lines = ["", "", ""]
+        self.progress_lines = ["", "", ""]
         self.stats = TestStatistics()
         self.timings = TestTimings()
         self.test_trace_stack = TraceStack()
@@ -346,7 +346,7 @@ class CLIProgress:
             colorama.just_fix_windows_console()
 
         # Finally, prepare the console interface.
-        self._draw_status_box()
+        self._draw_progress_box()
 
     # ------------------------------------------------------------------ helpers
 
@@ -376,33 +376,33 @@ class CLIProgress:
             return res.title()
         return res
 
-    def _draw_status_box(self):
-        if not self.status_stream:
+    def _draw_progress_box(self):
+        if not self.progress_stream:
             return
         text_width = self.terminal_width - 4
-        self.status_stream.write("┌" + "─" * (self.terminal_width - 2) + "┐\n")
+        self.progress_stream.write("┌" + "─" * (self.terminal_width - 2) + "┐\n")
         for i in range(3):
-            self.status_stream.write(
-                f"│ {self.status_lines[i]:<{text_width}.{text_width}} │\n"
+            self.progress_stream.write(
+                f"│ {self.progress_lines[i]:<{text_width}.{text_width}} │\n"
             )
-        self.status_stream.write("└" + "─" * (self.terminal_width - 2) + "┘")
-        self.status_stream.flush()
+        self.progress_stream.write("└" + "─" * (self.terminal_width - 2) + "┘")
+        self.progress_stream.flush()
 
-    def _clear_status_box(self):
-        if not self.status_stream:
+    def _clear_progress_box(self):
+        if not self.progress_stream:
             return
         # Clear the current line and move the cursor up. Do this 5 times to
         # clear the entire box (3 lines of text + top and bottom borders).
         for _ in range(4):
-            self.status_stream.write(ANSI.Cursor.CLEAR_LINE + ANSI.Cursor.UP())
+            self.progress_stream.write(ANSI.Cursor.CLEAR_LINE + ANSI.Cursor.UP())
         # Clear the final line and reset the cursor to the start of the line.
-        self.status_stream.write(ANSI.Cursor.CLEAR_LINE + ANSI.Cursor.HOME)
-        self.status_stream.flush()
+        self.progress_stream.write(ANSI.Cursor.CLEAR_LINE + ANSI.Cursor.HOME)
+        self.progress_stream.flush()
 
-    def _write_status_line(
+    def _write_progress_line(
         self, line_no: int, left_text: str = "", right_text: str = ""
     ):
-        if not self.status_stream:
+        if not self.progress_stream:
             return
         # Format the left and right text into a single line. Right text takes
         # priority. Truncate left text with '...' if necessary.
@@ -423,22 +423,22 @@ class CLIProgress:
         # For line 1, we want to move up 2 lines.
         # For line 2, we want to move up 1 line.
         assert line_no >= 0 and line_no < 3, "line_no must be between 0 and 2"
-        self.status_lines[line_no] = text
+        self.progress_lines[line_no] = text
         line_offset = 3 - line_no
-        self.status_stream.write(ANSI.Cursor.UP(line_offset))
-        self.status_stream.write(ANSI.Cursor.HOME + f"│ {text} │")
+        self.progress_stream.write(ANSI.Cursor.UP(line_offset))
+        self.progress_stream.write(ANSI.Cursor.HOME + f"│ {text} │")
         # Move cursor back down to the bottom of the box.
-        self.status_stream.write(ANSI.Cursor.DOWN(line_offset))
-        self.status_stream.flush()
+        self.progress_stream.write(ANSI.Cursor.DOWN(line_offset))
+        self.progress_stream.flush()
 
     def _print_trace(self, text: str):
-        # First clear the status box, so we don't have to worry about
+        # First clear the progress box, so we don't have to worry about
         # interleaving with the trace output.
-        self._clear_status_box()
+        self._clear_progress_box()
         # Then print the trace text as normal.
         self._writeln(text)
-        # Finally redraw the status box with the current test status.
-        self._draw_status_box()
+        # Finally redraw the progress box with the current test progress.
+        self._draw_progress_box()
 
     # ------------------------------------------------------------------ suite
 
@@ -447,7 +447,7 @@ class CLIProgress:
         self.timings.start_suite()
         self.suite_trace_stack.clear()
 
-        self._write_status_line(
+        self._write_progress_line(
             0, f"[SUITE {self.stats.format_suite_progress()}] {suite.full_name}"
         )
 
@@ -455,7 +455,7 @@ class CLIProgress:
         trace = self.suite_trace_stack.trace
         self.suite_trace_stack.clear()
 
-        self._write_status_line(0)
+        self._write_progress_line(0)
 
         status_text = ""
         if trace:
@@ -485,7 +485,7 @@ class CLIProgress:
         self.timings.start_test()
         self.test_trace_stack.clear()
 
-        self._write_status_line(
+        self._write_progress_line(
             1,
             f"[TEST {self.stats.format_test_progress()}] {test.name}",
             f"(elapsed {self.timings.format_elapsed_time()}, "
@@ -496,7 +496,7 @@ class CLIProgress:
         trace = self.test_trace_stack.trace
         self.stats.end_test(result)
         self.timings.end_test()
-        self._write_status_line(1)
+        self._write_progress_line(1)
         if not result.not_run:
             should_print = False
             status_text = "TEST " + self._past_tense(result.status)
@@ -545,14 +545,14 @@ class CLIProgress:
         trace_line = f"▶ {kwstr}({argstr})"
         stack.push_keyword(trace_line)
 
-        self._write_status_line(2, f"[{name}]  {argstr}")
+        self._write_progress_line(2, f"[{name}]  {argstr}")
 
     def end_keyword(self, keyword, result):
         stack = self.test_trace_stack if self.in_test else self.suite_trace_stack
         if result.status == "NOT RUN":
             # Discard; the header was never flushed so it just disappears.
             stack.pop_keyword()
-            self._write_status_line(2)
+            self._write_progress_line(2)
             return
 
         # Keyword ran - flush any pending ancestor headers (and this one)
@@ -588,7 +588,7 @@ class CLIProgress:
 
         stack.append_trace(keyword_trace)
 
-        self._write_status_line(2)
+        self._write_progress_line(2)
 
     # ------------------------------------------------------------------ logging
 
@@ -635,7 +635,7 @@ class CLIProgress:
     # ------------------------------------------------------------------ close
 
     def close(self):
-        self._clear_status_box()
+        self._clear_progress_box()
 
         if self.verbosity >= Verbosity.QUIET:
             self._writeln("RUN COMPLETE: " + self.stats.format_run_results())

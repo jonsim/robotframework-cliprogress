@@ -32,13 +32,13 @@ def main():
     # We also define our own custom arguments. We remove these from the arg
     # list, so that they don't get passed through to Robot. These custom
     # arguments are:
-    # - --consolestatus <value>
+    # - --consoleprogress <value>
     # - --verbose
     # - --quiet
     robot_args = []
     console_colors = None
     console_width = None
-    console_status = None
+    console_progress = None
     verbosity = None
 
     arg_iter = iter(args)
@@ -61,7 +61,7 @@ def main():
             "--consolecolors",
             "-W",
             "--consolewidth",
-            "--consolestatus",
+            "--consoleprogress",
         }
         consumed_next = False
         if needs_value and value is None:
@@ -76,15 +76,15 @@ def main():
             console_colors = value
         elif name in {"-W", "--consolewidth"}:
             console_width = value
-        elif name == "--consolestatus":
-            console_status = value
+        elif name == "--consoleprogress":
+            console_progress = value
         elif name == "--verbose":
             verbosity = "DEBUG"
         elif name == "--quiet":
             verbosity = "QUIET"
 
         # Reconstruct robot_args, omitting our custom arguments.
-        if name not in {"--consolestatus", "--verbose", "--quiet"}:
+        if name not in {"--consoleprogress", "--verbose", "--quiet"}:
             robot_args.append(arg)
             if consumed_next and value is not None:
                 robot_args.append(value)
@@ -95,8 +95,8 @@ def main():
         listener += f":colors={console_colors}"
     if console_width is not None:
         listener += f":width={console_width}"
-    if console_status is not None:
-        listener += f":console_status={console_status}"
+    if console_progress is not None:
+        listener += f":console_progress={console_progress}"
     if verbosity is not None:
         listener += f":verbosity={verbosity}"
     cmd = [
