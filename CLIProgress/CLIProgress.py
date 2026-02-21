@@ -137,11 +137,15 @@ class TraceStack:
         self._trace: str = ""
         self._depth: int = 0
         self._stack: list[str] = []
+        self.has_warnings: bool = False
+        self.has_errors: bool = False
 
     def clear(self):
         self._trace = ""
         self._depth = 0
         self._stack.clear()
+        self.has_warnings = False
+        self.has_errors = False
 
     @property
     def _indent(self) -> str:
@@ -181,6 +185,8 @@ class TestStatistics:
         self.skipped_tests = 0
         self.failed_tests = 0
         self.completed_tests = 0
+        self.warnings = 0
+        self.errors = 0
 
     def start_suite(self, suite):
         self.started_suites += 1
@@ -211,13 +217,20 @@ class TestStatistics:
 
     def format_run_results(self) -> str:
         plural = "s" if self.top_level_test_count != 1 else ""
-        return (
+        results = (
             f"{self.top_level_test_count or 0} test{plural}, "
             f"{self.completed_tests} completed "
             f"({self.passed_tests} passed, "
             f"{self.skipped_tests} skipped, "
             f"{self.failed_tests} failed)."
         )
+        if self.errors:
+            plural = "s" if self.errors != 1 else ""
+            results += f" {self.errors} test{plural} raised errors."
+        if self.warnings:
+            plural = "s" if self.warnings != 1 else ""
+            results += f" {self.warnings} test{plural} raised warnings."
+        return results
 
 
 class TestTimings:
@@ -312,6 +325,8 @@ class CLIProgress:
         # Configure output based on verbosity.
         self.print_passed = self.verbosity >= Verbosity.DEBUG
         self.print_skipped = self.verbosity >= Verbosity.DEBUG
+        self.print_warned = self.verbosity >= Verbosity.NORMAL
+        self.print_errored = self.verbosity >= Verbosity.NORMAL
         self.print_failed = self.verbosity >= Verbosity.QUIET
 
         # Set properties.
@@ -342,6 +357,24 @@ class CLIProgress:
     def _writeln(self, text=""):
         sys.stdout.write(text + "\n")
         sys.stdout.flush()
+
+    def _past_tense(self, verb: str) -> str:
+        is_upper = verb.isupper()
+        is_title = verb.istitle()
+        v = verb.lower()
+        if v.endswith("e"):
+            res = v + "d"
+        elif v.endswith("y"):
+            res = v[:-1] + "ied"
+        elif v.endswith("p"):
+            res = v + "ped"
+        else:
+            res = v + "ed"
+        if is_upper:
+            return res.upper()
+        elif is_title:
+            return res.title()
+        return res
 
     def _draw_status_box(self):
         if not self.status_stream:
@@ -461,32 +494,40 @@ class CLIProgress:
 
     def end_test(self, test, result):
         trace = self.test_trace_stack.trace
-        self.test_trace_stack.clear()
         self.stats.end_test(result)
         self.timings.end_test()
         self._write_status_line(1)
-        if result.not_run:
-            return
-
-        status_text = ""
-        if result.status == "PASS" and self.print_passed:
-            status_text = "TEST PASSED"
-            if self.colors:
-                status_text = ANSI.Fore.GREEN(status_text)
-        elif result.status == "SKIP" and self.print_skipped:
-            status_text = "TEST SKIPPED"
-            if self.colors:
-                status_text = ANSI.Fore.YELLOW(status_text)
-        elif result.status == "FAIL" and self.print_failed:
-            status_text = "TEST FAILED"
-            if self.colors:
-                status_text = ANSI.Fore.RED(status_text)
-        if status_text:
-            status_line = f"{status_text}: {test.full_name}"
-            underline = "═" * ANSI.len(status_line)
-            if not trace:
-                trace = result.message + "\n"
-            self._print_trace(f"{status_line}\n{underline}\n{trace}")
+        if not result.not_run:
+            should_print = False
+            status_text = "TEST " + self._past_tense(result.status)
+            status_color = None
+            if result.status == "PASS":
+                should_print = self.print_passed
+                status_color = ANSI.Fore.GREEN
+            elif result.status == "SKIP":
+                should_print = self.print_skipped
+                status_color = ANSI.Fore.YELLOW
+            elif result.status == "FAIL":
+                should_print = self.print_failed
+                status_color = ANSI.Fore.RED
+            if self.test_trace_stack.has_errors:
+                should_print |= self.print_errored
+                status_text += " WITH ERRORS"
+                status_color = ANSI.Fore.RED
+            if self.test_trace_stack.has_warnings:
+                should_print |= self.print_warned
+                status_text += " WITH WARNINGS"
+                status_color = ANSI.Fore.BRIGHT_YELLOW
+            if should_print:
+                if self.colors and status_color:
+                    status_text = status_color(status_text)
+                status_line = f"{status_text}: {test.full_name}"
+                underline = "═" * ANSI.len(status_line)
+                if not trace:
+                    trace = result.message + "\n"
+                trace = f"{status_line}\n{underline}\n{trace}"
+                self._print_trace(trace)
+        self.test_trace_stack.clear()
 
     # ------------------------------------------------------------------ keyword
 
@@ -535,7 +576,7 @@ class CLIProgress:
         elif result.status == "SKIP":
             status = "→ SKIP"
             if self.colors:
-                status = ANSI.Fore.BRIGHT_YELLOW(status)
+                status = ANSI.Fore.YELLOW(status)
             keyword_trace += f"{status}    {elapsed}"
         elif result.status == "FAIL":
             status = "✗ FAIL"
@@ -569,14 +610,25 @@ class CLIProgress:
             lines.append(f"  {text_line}")
 
         if self.colors:
-            if level == "FAIL":
+            if level == "ERROR":
+                lines = [ANSI.Fore.BRIGHT_RED(line) for line in lines]
+            elif level == "FAIL":
                 lines = [ANSI.Fore.BRIGHT_RED(line) for line in lines]
             elif level == "WARN":
                 lines = [ANSI.Fore.BRIGHT_YELLOW(line) for line in lines]
+            elif level == "SKIP":
+                lines = [ANSI.Fore.YELLOW(line) for line in lines]
             elif level == "INFO":
                 lines = [ANSI.Fore.BRIGHT_BLACK(line) for line in lines]
             elif level == "DEBUG" or level == "TRACE":
                 lines = [ANSI.Fore.WHITE(line) for line in lines]
+
+        if level == "ERROR":
+            self.stats.errors += 1
+            stack.has_errors = True
+        elif level == "WARN":
+            self.stats.warnings += 1
+            stack.has_warnings = True
 
         stack.append_trace("\n".join(lines))
 
