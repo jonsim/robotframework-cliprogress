@@ -12,6 +12,7 @@
 #
 import enum
 import functools
+import re
 import shutil
 import sys
 import time
@@ -42,7 +43,23 @@ class Verbosity(enum.Enum):
 
 
 # ANSI escape codes for colors and styles.
+class _ANSICode:
+    def __init__(self, code: str):
+        self.code = code
+
+    def __call__(self, text: str) -> str:
+        return f"{self.code}{text}{ANSI.RESET}"
+
+    def __repr__(self) -> str:
+        return self.code
+
+    def __str__(self) -> str:
+        return self.code
+
+
 class ANSI:
+    RESET = _ANSICode("\033[0m")
+
     class Cursor:
         CLEAR_LINE = "\033[2K"
 
@@ -65,52 +82,54 @@ class ANSI:
             return f"\033[{n}C"
 
     class Fore:
-        BLACK = "\033[30m"
-        RED = "\033[31m"
-        GREEN = "\033[32m"
-        YELLOW = "\033[33m"
-        BLUE = "\033[34m"
-        MAGENTA = "\033[35m"
-        CYAN = "\033[36m"
-        WHITE = "\033[37m"
-        BRIGHT_BLACK = "\033[90m"
-        BRIGHT_RED = "\033[91m"
-        BRIGHT_GREEN = "\033[92m"
-        BRIGHT_YELLOW = "\033[93m"
-        BRIGHT_BLUE = "\033[94m"
-        BRIGHT_MAGENTA = "\033[95m"
-        BRIGHT_CYAN = "\033[96m"
-        BRIGHT_WHITE = "\033[97m"
-        RESET = "\033[0m"
+        BLACK = _ANSICode("\033[30m")
+        RED = _ANSICode("\033[31m")
+        GREEN = _ANSICode("\033[32m")
+        YELLOW = _ANSICode("\033[33m")
+        BLUE = _ANSICode("\033[34m")
+        MAGENTA = _ANSICode("\033[35m")
+        CYAN = _ANSICode("\033[36m")
+        WHITE = _ANSICode("\033[37m")
+        BRIGHT_BLACK = _ANSICode("\033[90m")
+        BRIGHT_RED = _ANSICode("\033[91m")
+        BRIGHT_GREEN = _ANSICode("\033[92m")
+        BRIGHT_YELLOW = _ANSICode("\033[93m")
+        BRIGHT_BLUE = _ANSICode("\033[94m")
+        BRIGHT_MAGENTA = _ANSICode("\033[95m")
+        BRIGHT_CYAN = _ANSICode("\033[96m")
+        BRIGHT_WHITE = _ANSICode("\033[97m")
 
     class Back:
-        BLACK = "\033[40m"
-        RED = "\033[41m"
-        GREEN = "\033[42m"
-        YELLOW = "\033[43m"
-        BLUE = "\033[44m"
-        MAGENTA = "\033[45m"
-        CYAN = "\033[46m"
-        WHITE = "\033[47m"
-        BRIGHT_BLACK = "\033[100m"
-        BRIGHT_RED = "\033[101m"
-        BRIGHT_GREEN = "\033[102m"
-        BRIGHT_YELLOW = "\033[103m"
-        BRIGHT_BLUE = "\033[104m"
-        BRIGHT_MAGENTA = "\033[105m"
-        BRIGHT_CYAN = "\033[106m"
-        BRIGHT_WHITE = "\033[107m"
-        RESET = "\033[0m"
+        BLACK = _ANSICode("\033[40m")
+        RED = _ANSICode("\033[41m")
+        GREEN = _ANSICode("\033[42m")
+        YELLOW = _ANSICode("\033[43m")
+        BLUE = _ANSICode("\033[44m")
+        MAGENTA = _ANSICode("\033[45m")
+        CYAN = _ANSICode("\033[46m")
+        WHITE = _ANSICode("\033[47m")
+        BRIGHT_BLACK = _ANSICode("\033[100m")
+        BRIGHT_RED = _ANSICode("\033[101m")
+        BRIGHT_GREEN = _ANSICode("\033[102m")
+        BRIGHT_YELLOW = _ANSICode("\033[103m")
+        BRIGHT_BLUE = _ANSICode("\033[104m")
+        BRIGHT_MAGENTA = _ANSICode("\033[105m")
+        BRIGHT_CYAN = _ANSICode("\033[106m")
+        BRIGHT_WHITE = _ANSICode("\033[107m")
 
     class Style:
-        BOLD = "\033[1m"
-        DIM = "\033[2m"
-        ITALIC = "\033[3m"
-        UNDERLINE = "\033[4m"
-        BLINK = "\033[5m"
-        INVERT = "\033[7m"
-        HIDDEN = "\033[8m"
-        RESET = "\033[0m"
+        BOLD = _ANSICode("\033[1m")
+        DIM = _ANSICode("\033[2m")
+        ITALIC = _ANSICode("\033[3m")
+        UNDERLINE = _ANSICode("\033[4m")
+        BLINK = _ANSICode("\033[5m")
+        INVERT = _ANSICode("\033[7m")
+        HIDDEN = _ANSICode("\033[8m")
+
+    @staticmethod
+    def len(text: str) -> int:
+        """Return the length of the text, ignoring ANSI escape codes."""
+        return len(re.sub(r"\033\[[0-9;]*m", "", text))
 
 
 class TraceStack:
@@ -290,6 +309,11 @@ class CLIProgress:
         else:  # Assume NONE.
             self.status_stream = None
 
+        # Configure output based on verbosity.
+        self.print_passed = self.verbosity >= Verbosity.DEBUG
+        self.print_skipped = self.verbosity >= Verbosity.DEBUG
+        self.print_failed = self.verbosity >= Verbosity.QUIET
+
         # Set properties.
         self.terminal_width = min(
             shutil.get_terminal_size(fallback=(width, 40)).columns, width
@@ -400,14 +424,26 @@ class CLIProgress:
 
         self._write_status_line(0)
 
-        if result.status == "FAIL" and trace:
-            fail_line = f"SUITE FAILED: {suite.full_name}"
-            underline = "═" * len(fail_line)
-            if self.colors:
-                fail_line = (
-                    f"{ANSI.Fore.RED}SUITE FAILED{ANSI.Fore.RESET}: {suite.full_name}"
-                )
-            self._print_trace(f"{fail_line}\n{underline}\n{trace}")
+        status_text = ""
+        if trace:
+            if result.status == "PASS" and self.print_passed:
+                status_text = "SUITE PASSED"
+                if self.colors:
+                    status_text = ANSI.Fore.GREEN(status_text)
+            elif result.status == "SKIP" and self.print_skipped:
+                status_text = "SUITE SKIPPED"
+                if self.colors:
+                    status_text = ANSI.Fore.YELLOW(status_text)
+            elif result.status == "FAIL" and self.print_failed:
+                status_text = "SUITE FAILED"
+                if self.colors:
+                    status_text = ANSI.Fore.RED(status_text)
+        if status_text:
+            status_line = f"{status_text}: {suite.full_name}"
+            underline = "═" * ANSI.len(status_line)
+            if not trace:
+                trace = result.message + "\n"
+            self._print_trace(f"{status_line}\n{underline}\n{trace}")
 
     # ------------------------------------------------------------------ test
 
@@ -432,16 +468,25 @@ class CLIProgress:
         if result.not_run:
             return
 
-        if result.status == "FAIL":
-            fail_line = f"TEST FAILED: {test.full_name}"
-            underline = "═" * len(fail_line)
+        status_text = ""
+        if result.status == "PASS" and self.print_passed:
+            status_text = "TEST PASSED"
             if self.colors:
-                fail_line = (
-                    f"{ANSI.Fore.RED}TEST FAILED{ANSI.Fore.RESET}: {test.full_name}"
-                )
+                status_text = ANSI.Fore.GREEN(status_text)
+        elif result.status == "SKIP" and self.print_skipped:
+            status_text = "TEST SKIPPED"
+            if self.colors:
+                status_text = ANSI.Fore.YELLOW(status_text)
+        elif result.status == "FAIL" and self.print_failed:
+            status_text = "TEST FAILED"
+            if self.colors:
+                status_text = ANSI.Fore.RED(status_text)
+        if status_text:
+            status_line = f"{status_text}: {test.full_name}"
+            underline = "═" * ANSI.len(status_line)
             if not trace:
                 trace = result.message + "\n"
-            self._print_trace(f"{fail_line}\n{underline}\n{trace}")
+            self._print_trace(f"{status_line}\n{underline}\n{trace}")
 
     # ------------------------------------------------------------------ keyword
 
@@ -485,17 +530,17 @@ class CLIProgress:
         if result.status == "PASS":
             status = "✓ PASS"
             if self.colors:
-                status = f"{ANSI.Fore.BRIGHT_GREEN}{status}{ANSI.Fore.RESET}"
+                status = ANSI.Fore.BRIGHT_GREEN(status)
             keyword_trace += f"{status}    {elapsed}"
         elif result.status == "SKIP":
             status = "→ SKIP"
             if self.colors:
-                status = f"{ANSI.Fore.BRIGHT_YELLOW}{status}{ANSI.Fore.RESET}"
+                status = ANSI.Fore.BRIGHT_YELLOW(status)
             keyword_trace += f"{status}    {elapsed}"
         elif result.status == "FAIL":
             status = "✗ FAIL"
             if self.colors:
-                status = f"{ANSI.Fore.BRIGHT_RED}{status}{ANSI.Fore.RESET}"
+                status = ANSI.Fore.BRIGHT_RED(status)
             keyword_trace += f"{status}    {elapsed}"
         else:
             keyword_trace += f"? {result.status}    {elapsed}"
@@ -516,36 +561,24 @@ class CLIProgress:
 
         level_initial = level[0].upper()
         text_lines = text.splitlines()
-        formatted_lines = []
+        lines = []
         # First line gets level initial
-        formatted_lines.append(f"{level_initial} {text_lines[0]}")
+        lines.append(f"{level_initial} {text_lines[0]}")
         # Remaining lines align without repeating the level
         for text_line in text_lines[1:]:
-            formatted_lines.append(f"  {text_line}")
+            lines.append(f"  {text_line}")
 
         if self.colors:
             if level == "FAIL":
-                formatted_lines = [
-                    f"{ANSI.Fore.BRIGHT_RED}{line}{ANSI.Fore.RESET}"
-                    for line in formatted_lines
-                ]
+                lines = [ANSI.Fore.BRIGHT_RED(line) for line in lines]
             elif level == "WARN":
-                formatted_lines = [
-                    f"{ANSI.Fore.BRIGHT_YELLOW}{line}{ANSI.Fore.RESET}"
-                    for line in formatted_lines
-                ]
+                lines = [ANSI.Fore.BRIGHT_YELLOW(line) for line in lines]
             elif level == "INFO":
-                formatted_lines = [
-                    f"{ANSI.Fore.BRIGHT_BLACK}{line}{ANSI.Fore.RESET}"
-                    for line in formatted_lines
-                ]
+                lines = [ANSI.Fore.BRIGHT_BLACK(line) for line in lines]
             elif level == "DEBUG" or level == "TRACE":
-                formatted_lines = [
-                    f"{ANSI.Fore.WHITE}{line}{ANSI.Fore.RESET}"
-                    for line in formatted_lines
-                ]
+                lines = [ANSI.Fore.WHITE(line) for line in lines]
 
-        stack.append_trace("\n".join(formatted_lines))
+        stack.append_trace("\n".join(lines))
 
     # ------------------------------------------------------------------ close
 
