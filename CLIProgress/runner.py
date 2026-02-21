@@ -33,14 +33,16 @@ def main():
     # list, so that they don't get passed through to Robot. These custom
     # arguments are:
     # - --consolestatus <value>
+    # - --verbose
     robot_args = []
     console_colors = None
     console_width = None
     console_status = None
+    verbose = False
 
     arg_iter = iter(args)
     for arg in arg_iter:
-        # Normalize argument to determine its name and potential inline value
+        # Normalize argument to determine its name and potential inline value.
         if arg.startswith("--"):
             parts = arg.split("=", 1)
             name = "--" + parts[0][2:].lower().replace("-", "")
@@ -52,7 +54,7 @@ def main():
             name = arg
             value = None
 
-        # Extract value from the next argument if needed and not inline
+        # Extract value from the next argument if needed and not inline.
         needs_value = name in {
             "-C",
             "--consolecolors",
@@ -68,16 +70,18 @@ def main():
             except StopIteration:
                 pass
 
-        # Capture specific arguments
+        # Capture specific arguments.
         if name in {"-C", "--consolecolors"}:
             console_colors = value
         elif name in {"-W", "--consolewidth"}:
             console_width = value
         elif name == "--consolestatus":
             console_status = value
+        elif name == "--verbose":
+            verbose = True
 
-        # Reconstruct robot_args, omitting our custom arguments
-        if name != "--consolestatus":
+        # Reconstruct robot_args, omitting our custom arguments.
+        if name not in {"--consolestatus", "--verbose"}:
             robot_args.append(arg)
             if consumed_next and value is not None:
                 robot_args.append(value)
@@ -90,6 +94,8 @@ def main():
         listener += f":width={console_width}"
     if console_status is not None:
         listener += f":console_status={console_status}"
+    if verbose:
+        listener += ":verbosity=DEBUG"
     cmd = [
         "robot",
         "--console=none",
