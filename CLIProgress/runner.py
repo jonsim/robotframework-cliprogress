@@ -101,13 +101,18 @@ def main():
         listener += f":verbosity={verbosity}"
     cmd = [
         "robot",
-        "--console=none",
+        "--console=quiet",
         "--listener",
         listener,
         *robot_args,
     ]
 
     try:
-        sys.exit(subprocess.call(cmd))
+        result = subprocess.run(cmd, stderr=subprocess.PIPE)
+        # If the process failed because of an internal error (likely when
+        # parsing arguments or in the listener itself), print the error message.
+        if result.returncode > 250:
+            sys.stderr.write(result.stderr.decode())
+        sys.exit(result.returncode)
     except KeyboardInterrupt:
         sys.exit(130)
